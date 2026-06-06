@@ -26,6 +26,8 @@ const createOrder = async (req, res) => {
 };
 
 const captureOrder = async (req, res) => {
+  let connection;
+
   try {
     const { orderId } = req.body;
 
@@ -33,32 +35,42 @@ const captureOrder = async (req, res) => {
       return res.status(400).json({ message: "orderId es requerido" });
     }
 
-    const [rows] = await pool.execute(
-      "SELECT * FROM orders WHERE paypal_order_id = ?",
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    const [result] = await connection.execute(
+      "UPDATE orders SET status = 'PROCESSING' WHERE paypal_order_id = ? AND status = 'PENDING'",
       [orderId],
     );
 
-    if (rows.length === 0) {
-      return res.status(404).json({ message: "Orden no encontrada" });
+    if (result.affectedRows === 0) {
+      await connection.rollback();
+      connection.release();
+      return res
+        .status(400)
+        .json({ error: "Orden no encontrada o ya fue procesada" });
     }
 
-    if (rows[0].status === "COMPLETED") {
-      return res.status(400).json({ error: "La orden ya fue procesada" });
-    }
+    await connection.commit();
+    connection.release();
 
     const captureData = await capturePaypalOrder(orderId);
 
     await pool.execute(
-      "UPDATE orders SET status = ? WHERE paypal_order_id = ?",
-      ["COMPLETED", orderId],
+      "UPDATE orders SET status = 'COMPLETED' WHERE paypal_order_id = ?",
+      [orderId],
     );
 
     res.json({
       mensaje: " Pago completado exitosamente",
-      orden: rows[0],
       paypal: captureData,
     });
   } catch (error) {
+    // Ahora connection puede ser undefined si falló antes de getConnection
+    if (connection) {
+      await connection.rollback();
+      connection.release();
+    }
     console.log("Error capturando el pago:", error.message);
     res.status(500).json({ error: "Error capturando el pago" });
   }

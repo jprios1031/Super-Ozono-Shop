@@ -56,7 +56,7 @@ const handleApprove = async (data) => {
       const response = await axios.post(`${BACKEND_URL}/api/paypal/capture-order`, {
         orderId: orderId
       });
-      setMessage(`✅ Pago exitoso por $${selectedProduct.price} - ${selectedProduct.name}`);
+      setMessage(` Pago exitoso por $${selectedProduct.price} - ${selectedProduct.name}`);
       setOrderStatus('success');
       setSelectedProduct(null);
     } catch (error) {
